@@ -25,6 +25,10 @@ skipList: []
 # list of reserved Type names to avoid using
 reserved: []
 
+# pin type names to specific CRD paths to resolve conflicts
+pinnings:
+  - DNSZone.DNSZoneSpec.V0_0_15.Entry
+
 # renames to apply before type name evaluation and de-duplication 
 # a matching key is replaced by the given value
 renames: {}

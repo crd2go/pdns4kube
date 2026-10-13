@@ -62,3 +62,29 @@ spec:
               readOnly: true
               skipProperties: []
 
+    - gvk:
+        group: pdns.example.io
+        version: v1
+        kind: DNSRecord
+      categories: [pdns]
+      shortNames: [dr]
+      namespaced: true
+      mappings:
+        - majorVersion: v0_0_15
+          openAPIRef:
+            name: pdns-api
+          parameters:
+            path:
+              name: '/api/v1/servers/localhost/zones/{zoneId}'
+              verb: patch
+          entry:
+            schema: Record
+            filters:
+              readWriteOnly: true
+              skipProperties: []
+          status:
+            schema: Record
+            filters:
+              readOnly: true
+              skipProperties: []
+

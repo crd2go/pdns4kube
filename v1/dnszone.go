@@ -47,7 +47,7 @@ type DNSZoneStatus struct {
 	// state.
 	Conditions *[]metav1.Condition `json:"conditions,omitempty"`
 
-	// V0_0_15 The last observed Atlas state of the dnszone resource for version
+	// V0_0_15 The last observed resource state of the dnszone resource for version
 	// v0_0_15.
 	V0_0_15 *DNSZoneStatusV0_0_15 `json:"v0_0_15,omitempty"`
 }

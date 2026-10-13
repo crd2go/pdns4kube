@@ -65,8 +65,54 @@ paths:
         '204':
           description: Deleted
 
+    patch:
+      summary: Replace RRSet
+      operationId: replaceRRSet
+      parameters:
+        - name: zone_id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Record'
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Record'
+
 components:
   schemas:
+    Record:
+      type: object
+      required:
+        - zone
+        - name
+        - type
+      properties:
+        zone:
+          type: string
+          example: "example.com."
+        name:
+          type: string
+          example: "www.example.com."
+        type:
+          type: string
+          enum: [A, AAAA, CNAME, MX, NS, PTR, SRV, TXT]
+        ttl:
+          type: integer
+        values:
+          type: array
+          items:
+            type: string
+          example: ["192.0.2.1"]
     Zone:
       type: object
       required:
