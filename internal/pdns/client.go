@@ -139,6 +139,37 @@ func (c *Client) UpdateZone(ctx context.Context, zoneID string, z Zone) error {
 	return drain(resp)
 }
 
+// ReplaceRRset creates or replaces the given RRset in the zone with the
+// given ID via PATCH. The rrset's ChangeType field is overwritten with
+// "REPLACE", so callers need not set it. The zone ID is also not modified;
+// rrset.Name must be the fully-qualified record name.
+func (c *Client) ReplaceRRset(ctx context.Context, zoneID string, rrset RRset) error {
+	rrset.ChangeType = "REPLACE"
+	payload := rrsetsPayload{RRsets: []RRset{rrset}}
+	resp, err := c.do(ctx, http.MethodPatch, c.zonesURL(zoneID), payload)
+	if err != nil {
+		return err
+	}
+	return drain(resp)
+}
+
+// DeleteRRset removes the RRset identified by name and rtype from the zone
+// with the given ID via PATCH, sending changetype "DELETE" with no records
+// as required by the PowerDNS API.
+func (c *Client) DeleteRRset(ctx context.Context, zoneID, name, rtype string) error {
+	payload := rrsetsPayload{RRsets: []RRset{{
+		Name:       name,
+		Type:       rtype,
+		ChangeType: "DELETE",
+		Records:    []Record{},
+	}}}
+	resp, err := c.do(ctx, http.MethodPatch, c.zonesURL(zoneID), payload)
+	if err != nil {
+		return err
+	}
+	return drain(resp)
+}
+
 // drain reads and discards the response body and closes it.
 func drain(resp io.ReadCloser) error {
 	defer resp.Close()

@@ -188,6 +188,118 @@ func TestUpdateZoneEmptyNameserversSendsReplaceWithNoRecords(t *testing.T) {
 	}
 }
 
+func TestReplaceRRset(t *testing.T) {
+	srv, rec := capture(t, http.StatusNoContent, "")
+	c := NewClient(srv.URL, "k", srv.Client())
+
+	err := c.ReplaceRRset(context.Background(), "example.org.", RRset{
+		Name:    "www.example.org.",
+		Type:    "A",
+		TTL:     300,
+		Records: []Record{{Content: "192.0.2.1"}, {Content: "192.0.2.2", Disabled: true}},
+	})
+	if err != nil {
+		t.Fatalf("ReplaceRRset: %v", err)
+	}
+
+	if rec.method != http.MethodPatch {
+		t.Errorf("method = %q, want PATCH", rec.method)
+	}
+	if rec.path != "/api/v1/servers/localhost/zones/example.org." {
+		t.Errorf("path = %q", rec.path)
+	}
+	if rec.apiKey != "k" {
+		t.Errorf("X-API-Key = %q, want k", rec.apiKey)
+	}
+	if rec.contentType != "application/json" {
+		t.Errorf("Content-Type = %q", rec.contentType)
+	}
+	var got rrsetsPayload
+	if err := json.Unmarshal(rec.body, &got); err != nil {
+		t.Fatalf("decode request body: %v", err)
+	}
+	if len(got.RRsets) != 1 {
+		t.Fatalf("rrsets = %+v, want 1 entry", got.RRsets)
+	}
+	rr := got.RRsets[0]
+	if rr.Name != "www.example.org." || rr.Type != "A" || rr.TTL != 300 {
+		t.Errorf("rrset = %+v", rr)
+	}
+	if rr.ChangeType != "REPLACE" {
+		t.Errorf("changetype = %q, want REPLACE", rr.ChangeType)
+	}
+	if len(rr.Records) != 2 || rr.Records[0].Content != "192.0.2.1" || !rr.Records[1].Disabled {
+		t.Errorf("records = %+v", rr.Records)
+	}
+}
+
+func TestReplaceRRsetOverwritesChangeType(t *testing.T) {
+	var bodies []rrsetsPayload
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		var p rrsetsPayload
+		if err := json.Unmarshal(b, &p); err != nil {
+			t.Errorf("decode PATCH body: %v", err)
+		}
+		bodies = append(bodies, p)
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer srv.Close()
+
+	c := NewClient(srv.URL, "k", srv.Client())
+	err := c.ReplaceRRset(context.Background(), "example.org.", RRset{
+		Name:       "www.example.org.",
+		Type:       "A",
+		ChangeType: "DELETE",
+	})
+	if err != nil {
+		t.Fatalf("ReplaceRRset: %v", err)
+	}
+	if len(bodies) != 1 || len(bodies[0].RRsets) != 1 || bodies[0].RRsets[0].ChangeType != "REPLACE" {
+		t.Errorf("rrsets = %+v, want changetype REPLACE", bodies)
+	}
+}
+
+func TestDeleteRRset(t *testing.T) {
+	srv, rec := capture(t, http.StatusNoContent, "")
+	c := NewClient(srv.URL, "k", srv.Client())
+
+	err := c.DeleteRRset(context.Background(), "example.org.", "www.example.org.", "A")
+	if err != nil {
+		t.Fatalf("DeleteRRset: %v", err)
+	}
+
+	if rec.method != http.MethodPatch {
+		t.Errorf("method = %q, want PATCH", rec.method)
+	}
+	if rec.path != "/api/v1/servers/localhost/zones/example.org." {
+		t.Errorf("path = %q", rec.path)
+	}
+	if rec.apiKey != "k" {
+		t.Errorf("X-API-Key = %q, want k", rec.apiKey)
+	}
+	if rec.contentType != "application/json" {
+		t.Errorf("Content-Type = %q", rec.contentType)
+	}
+	var got rrsetsPayload
+	if err := json.Unmarshal(rec.body, &got); err != nil {
+		t.Fatalf("decode request body: %v", err)
+	}
+	if len(got.RRsets) != 1 {
+		t.Fatalf("rrsets = %+v, want 1 entry", got.RRsets)
+	}
+	rr := got.RRsets[0]
+	if rr.Name != "www.example.org." || rr.Type != "A" {
+		t.Errorf("rrset = %+v", rr)
+	}
+	if rr.ChangeType != "DELETE" {
+		t.Errorf("changetype = %q, want DELETE", rr.ChangeType)
+	}
+	if len(rr.Records) != 0 {
+		t.Errorf("records = %+v, want empty for DELETE", rr.Records)
+	}
+}
+
 func TestDeleteZone(t *testing.T) {
 	srv, rec := capture(t, http.StatusNoContent, "")
 	c := NewClient(srv.URL, "k", srv.Client())
