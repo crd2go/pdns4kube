@@ -33,6 +33,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
+	"github.com/josvazg/pdns4kube/internal/controller/record"
 	"github.com/josvazg/pdns4kube/internal/controller/zone"
 	"github.com/josvazg/pdns4kube/internal/pdns"
 	v1 "github.com/josvazg/pdns4kube/v1"
@@ -158,6 +159,13 @@ func registerReconcilers(mgr manager.Manager, opConfig *operatorCfg) error {
 	}
 	if err := reconciler.SetupWithManager(mgr, controller.Options{}); err != nil {
 		return fmt.Errorf("failed setup DNSZone controller: %w", err)
+	}
+	recordReconciler, err := record.NewPDNSRecordReconciler(record.Predicates(), pdnsClient)
+	if err != nil {
+		return fmt.Errorf("error creating DNSRecord controller: %w", err)
+	}
+	if err := recordReconciler.SetupWithManager(mgr, controller.Options{}); err != nil {
+		return fmt.Errorf("failed setup DNSRecord controller: %w", err)
 	}
 	return nil
 }
