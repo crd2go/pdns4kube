@@ -47,10 +47,13 @@ func TestV000015Handler(t *testing.T) {
 			t.Errorf("zone ID = %q, want %q", got.zoneID, "example.org.")
 		}
 		wantRRset := pdns.RRset{
-			Name:    "www.example.org.",
-			Type:    "A",
-			TTL:     300,
-			Records: []pdns.Record{{Content: "192.0.2.1"}, {Content: "192.0.2.2"}},
+			Name: "www.example.org.",
+			Type: "A",
+			TTL:  300,
+			Records: []pdns.Record{
+				{Content: "192.0.2.1"},
+				{Content: "192.0.2.2", Disabled: true},
+			},
 		}
 		if got.rrset.Name != wantRRset.Name || got.rrset.Type != wantRRset.Type ||
 			got.rrset.TTL != wantRRset.TTL ||
@@ -177,12 +180,12 @@ func TestRRsetFromEntry(t *testing.T) {
 		}
 	})
 
-	t.Run("nil values", func(t *testing.T) {
+	t.Run("nil records", func(t *testing.T) {
 		obj := testDNSRecord()
-		obj.Spec.V0_0_15.Entry.Values = nil
+		obj.Spec.V0_0_15.Entry.Records = nil
 
 		_, err := h.rrsetFromEntry(obj)
-		if wantErr := "v0_0_15 spec entry values is required"; err == nil || !strings.Contains(err.Error(), wantErr) {
+		if wantErr := "v0_0_15 spec entry records is required"; err == nil || !strings.Contains(err.Error(), wantErr) {
 			t.Errorf("error = %v, want substring %q", err, wantErr)
 		}
 	})
@@ -220,18 +223,24 @@ func newTestHandler(t *testing.T, pdnsClient PDNSRecordClient) *V000015Handler {
 	return h
 }
 
-// recordsEqual reports whether two record slices have equal contents.
+// recordsEqual reports whether two record slices have equal contents and
+// disabled flags, order independent.
 func recordsEqual(a, b []pdns.Record) bool {
 	if len(a) != len(b) {
 		return false
 	}
-	amap := make(map[string]int, len(a))
+	type record struct {
+		content  string
+		disabled bool
+	}
+	amap := make(map[record]int, len(a))
 	for _, r := range a {
-		amap[r.Content]++
+		amap[record{content: r.Content, disabled: r.Disabled}]++
 	}
 	for _, r := range b {
-		amap[r.Content]--
-		if amap[r.Content] < 0 {
+		key := record{content: r.Content, disabled: r.Disabled}
+		amap[key]--
+		if amap[key] < 0 {
 			return false
 		}
 	}
@@ -273,11 +282,14 @@ func testDNSRecord() *v1.DNSRecord {
 		Spec: v1.DNSRecordSpec{
 			V0_0_15: &v1.DNSRecordSpecV0_0_15{
 				Entry: &v1.V0_0_15Entry{
-					Name:   "www.example.org.",
-					Ttl:    &[]int{300}[0],
-					Type:   "A",
-					Values: &[]string{"192.0.2.1", "192.0.2.2"},
-					Zone:   "example.org.",
+					Name: "www.example.org.",
+					Records: &[]v1.Records{
+						{Content: "192.0.2.1"},
+						{Content: "192.0.2.2", Disabled: &[]bool{true}[0]},
+					},
+					Ttl:  &[]int{300}[0],
+					Type: "A",
+					Zone: "example.org.",
 				},
 			},
 		},

@@ -40,13 +40,19 @@ type DNSRecordSpecV0_0_15 struct {
 type V0_0_15Entry struct {
 	Name string `json:"name"`
 
+	Records *[]Records `json:"records,omitempty"`
+
 	Ttl *int `json:"ttl,omitempty"`
 
 	Type string `json:"type"`
 
-	Values *[]string `json:"values,omitempty"`
-
 	Zone string `json:"zone"`
+}
+
+type Records struct {
+	Content string `json:"content"`
+
+	Disabled *bool `json:"disabled,omitempty"`
 }
 
 type DNSRecordStatus struct {
