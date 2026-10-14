@@ -1,0 +1,14 @@
+apiVersion: pdns.example.io/v1
+kind: DNSRecord
+metadata:
+  name: example-org-www
+spec:
+  v0_0_15:
+    entry:
+      name: www.example.org.
+      type: A
+      zone: example.org.
+      ttl: 3600
+      records:
+        - content: 192.0.2.10
+        - content: 192.0.2.20
