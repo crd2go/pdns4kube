@@ -12,6 +12,7 @@ require (
 	github.com/crd2go/constate v0.0.0-20261002093940-6e087d2a2e14
 	github.com/crd2go/crapi v0.0.0-20260918152012-7bf71933e565
 	github.com/magefile/mage v1.17.2
+	github.com/stretchr/testify v1.12.1
 	k8s.io/apiextensions-apiserver v0.37.0
 	k8s.io/apimachinery v0.37.0
 	k8s.io/client-go v0.37.0
@@ -88,7 +89,6 @@ require (
 	github.com/spf13/viper v1.21.0 // indirect
 	github.com/stoewer/go-strcase v1.3.1 // indirect
 	github.com/stretchr/objx v0.5.3 // indirect
-	github.com/stretchr/testify v1.12.1 // indirect
 	github.com/subosito/gotenv v1.6.0 // indirect
 	github.com/x448/float16 v0.8.4 // indirect
 	go.mongodb.org/atlas-sdk/v20250312005 v20250312005.0.0 // indirect
