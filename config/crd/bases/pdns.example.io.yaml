@@ -155,16 +155,23 @@ spec:
                       name:
                         example: www.example.com.
                         type: string
+                      records:
+                        example:
+                        - content: 192.0.2.1
+                        items:
+                          properties:
+                            content:
+                              type: string
+                            disabled:
+                              type: boolean
+                          required:
+                          - content
+                          type: object
+                        type: array
                       ttl:
                         type: integer
                       type:
                         type: string
-                      values:
-                        example:
-                        - 192.0.2.1
-                        items:
-                          type: string
-                        type: array
                       zone:
                         example: example.com.
                         type: string

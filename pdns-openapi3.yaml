@@ -108,11 +108,19 @@ components:
           enum: [A, AAAA, CNAME, MX, NS, PTR, SRV, TXT]
         ttl:
           type: integer
-        values:
+        records:
           type: array
           items:
-            type: string
-          example: ["192.0.2.1"]
+            type: object
+            required:
+              - content
+            properties:
+              content:
+                type: string
+              disabled:
+                type: boolean
+          example:
+            - content: "192.0.2.1"
     Zone:
       type: object
       required:

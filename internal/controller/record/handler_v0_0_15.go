@@ -15,10 +15,16 @@
 package record
 
 import (
+	"bufio"
+	"bytes"
 	"context"
+	"errors"
 	"fmt"
+	"io"
 
 	"k8s.io/apimachinery/pkg/runtime"
+	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
+	"k8s.io/apimachinery/pkg/util/yaml"
 
 	constate "github.com/crd2go/constate"
 	crapi "github.com/crd2go/crapi"
@@ -48,7 +54,7 @@ func NewV000015Handler(pdnsClient PDNSRecordClient) (*V000015Handler, error) {
 	if err := v1.AddToScheme(sch); err != nil {
 		return nil, fmt.Errorf("register v1 types in scheme: %w", err)
 	}
-	crd, err := bases.CustomResourceDefinition()
+	crd, err := dnsRecordCRD()
 	if err != nil {
 		return nil, fmt.Errorf("parse embedded CRD: %w", err)
 	}
@@ -57,6 +63,29 @@ func NewV000015Handler(pdnsClient PDNSRecordClient) (*V000015Handler, error) {
 		return nil, fmt.Errorf("create translator: %w", err)
 	}
 	return &V000015Handler{pdns: pdnsClient, translator: tr}, nil
+}
+
+// dnsRecordCRD parses the embedded CRD base and returns the DNSRecord CRD.
+// The embedded YAML is a multi-document file whose first document is the
+// DNSZone CRD, so the documents are scanned for the DNSRecord kind.
+func dnsRecordCRD() (*apiextensionsv1.CustomResourceDefinition, error) {
+	reader := yaml.NewYAMLReader(bufio.NewReader(bytes.NewReader(bases.PDNSExampleIOYAML)))
+	for {
+		doc, err := reader.Read()
+		if errors.Is(err, io.EOF) {
+			return nil, fmt.Errorf("dnsrecords CRD not found in embedded bases")
+		}
+		if err != nil {
+			return nil, fmt.Errorf("read embedded CRD document: %w", err)
+		}
+		crd := &apiextensionsv1.CustomResourceDefinition{}
+		if err := yaml.Unmarshal(doc, crd); err != nil {
+			return nil, fmt.Errorf("parse embedded CRD document: %w", err)
+		}
+		if crd.Spec.Names.Kind == "DNSRecord" {
+			return crd, nil
+		}
+	}
 }
 
 type V000015Handler struct {
@@ -116,32 +145,24 @@ type translatedRRset struct {
 }
 
 // rrsetFromEntry converts the v0_0_15 spec entry into a translatedRRset.
-// The crapi translator is not used here because the embedded CRD has no
-// schema for the PowerDNS rrsets payload, so the Values to Record contents
-// mapping is done explicitly.
+// The crapi translator projects the RRset-shaped entry fields (name, type,
+// ttl, records) into the PowerDNS RRset; the zone ID is extracted explicitly
+// because it is not part of the RRset payload, and the default TTL is applied
+// only when the entry omits one.
 func (h *V000015Handler) rrsetFromEntry(obj *v1.DNSRecord) (translatedRRset, error) {
 	if obj.Spec.V0_0_15 == nil || obj.Spec.V0_0_15.Entry == nil {
 		return translatedRRset{}, fmt.Errorf("v0_0_15 spec entry is required")
 	}
 	entry := obj.Spec.V0_0_15.Entry
-	if entry.Values == nil {
-		return translatedRRset{}, fmt.Errorf("v0_0_15 spec entry values is required")
+	if entry.Records == nil {
+		return translatedRRset{}, fmt.Errorf("v0_0_15 spec entry records is required")
 	}
-	records := make([]pdns.Record, 0, len(*entry.Values))
-	for _, value := range *entry.Values {
-		records = append(records, pdns.Record{Content: value})
+	var rrset pdns.RRset
+	if err := h.translator.ToAPI(&rrset, obj); err != nil {
+		return translatedRRset{}, fmt.Errorf("translate entry to rrset: %w", err)
 	}
-	ttl := defaultTTL
-	if entry.Ttl != nil {
-		ttl = *entry.Ttl
+	if entry.Ttl == nil {
+		rrset.TTL = defaultTTL
 	}
-	return translatedRRset{
-		zoneID: entry.Zone,
-		rrset: pdns.RRset{
-			Name:    entry.Name,
-			Type:    entry.Type,
-			TTL:     ttl,
-			Records: records,
-		},
-	}, nil
+	return translatedRRset{zoneID: entry.Zone, rrset: rrset}, nil
 }
