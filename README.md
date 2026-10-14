@@ -1,7 +1,7 @@
 # pdns4kube
 
-A Kubernetes operator that manages DNS zones in [PowerDNS](https://www.powerdns.com/) Authoritative Server.
-It watches `DNSZone` resources (`pdns.example.io/v1`) and synchronizes zone create/update/delete
+A Kubernetes operator that manages DNS zones provisioned by an [PowerDNS](https://www.powerdns.com/) Authoritative Server.
+It watches `DNSZone` and `DNSRecord` resources (`pdns.example.io/v1`) and synchronizes zone create/update/delete
 with the PowerDNS Authoritative API.
 
 ## Prerequisites
@@ -21,18 +21,12 @@ with `nix develop` instead of installing them individually.
 Start everything (Kind cluster, CRDs, a dev PowerDNS, API port-forward, and the operator).
 
 With Nix, enter the dev shell:
-
 ```sh
 nix develop
 ```
+Without Nix, install Go and mage.
 
 Then, from the resulting dev shell, run:
-
-```sh
-mage run
-```
-
-Without Nix (tools installed individually):
 
 ```sh
 mage run
