@@ -12,15 +12,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package record
+package operator
 
 import (
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 )
 
-// Predicates returns the predicates used to filter watch events for DNSRecord
-// objects: only generation changes are reconciled.
-func Predicates() []predicate.Predicate {
+// DefaultPredicates returns the default watch event predicates used by all
+// controllers: only generation changes are reconciled.
+func DefaultPredicates() []predicate.Predicate {
 	return []predicate.Predicate{
 		predicate.GenerationChangedPredicate{},
 	}

@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package operator
+package operator_test
 
 import (
 	"context"
@@ -20,6 +20,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/josvazg/pdns4kube/internal/operator"
 	"k8s.io/client-go/rest"
 )
 
@@ -59,7 +60,7 @@ func TestRun(t *testing.T) {
 			getConfig := func() (*rest.Config, error) {
 				return nil, errors.New("injected config failure")
 			}
-			err := run(context.Background(), tt.args, getenv, getConfig)
+			err := operator.Run(context.Background(), tt.args, getenv, getConfig)
 			if tt.wantErr == "" {
 				if err != nil {
 					t.Fatalf("Run() error = %v, want nil", err)

@@ -17,13 +17,13 @@ package zone
 import (
 	"context"
 	"errors"
-	"slices"
-	"strings"
 	"testing"
 
 	constate "github.com/crd2go/constate"
 	"github.com/josvazg/pdns4kube/internal/pdns"
 	v1 "github.com/josvazg/pdns4kube/v1"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestV000015Handler(t *testing.T) {
@@ -34,24 +34,15 @@ func TestV000015Handler(t *testing.T) {
 		h := newTestHandler(t, pdnsClient)
 
 		res, err := h.HandleInitial(ctx, testDNSZone())
-		if err != nil {
-			t.Fatalf("HandleInitial() error = %v", err)
-		}
-		if res.NextState != constate.StateCreated {
-			t.Errorf("NextState = %v, want %v", res.NextState, constate.StateCreated)
-		}
-		if len(pdnsClient.created) != 1 {
-			t.Fatalf("created calls = %d, want 1", len(pdnsClient.created))
-		}
+		require.NoError(t, err)
+		assert.Equal(t, constate.StateCreated, res.NextState)
+		require.Len(t, pdnsClient.created, 1)
 		want := pdns.Zone{
 			Name:        "example.org.",
 			Kind:        "Native",
 			Nameservers: []string{"ns1.example.org.", "ns2.example.org."},
 		}
-		if !slices.Equal(pdnsClient.created[0].Nameservers, want.Nameservers) ||
-			pdnsClient.created[0].Name != want.Name || pdnsClient.created[0].Kind != want.Kind {
-			t.Errorf("created zone = %+v, want %+v", pdnsClient.created[0], want)
-		}
+		assert.Equal(t, want, pdnsClient.created[0])
 	})
 
 	t.Run("HandleInitial missing entry", func(t *testing.T) {
@@ -59,15 +50,9 @@ func TestV000015Handler(t *testing.T) {
 		h := newTestHandler(t, pdnsClient)
 
 		res, err := h.HandleInitial(ctx, &v1.DNSZone{})
-		if wantErr := "v0_0_15 spec entry is required"; err == nil || !strings.Contains(err.Error(), wantErr) {
-			t.Errorf("error = %v, want substring %q", err, wantErr)
-		}
-		if res.NextState != constate.StateInitial {
-			t.Errorf("NextState = %v, want %v", res.NextState, constate.StateInitial)
-		}
-		if len(pdnsClient.created) != 0 {
-			t.Errorf("created calls = %d, want 0", len(pdnsClient.created))
-		}
+		require.ErrorContains(t, err, "v0_0_15 spec entry is required")
+		assert.Equal(t, constate.StateInitial, res.NextState)
+		assert.Empty(t, pdnsClient.created)
 	})
 
 	t.Run("HandleInitial create error", func(t *testing.T) {
@@ -75,12 +60,8 @@ func TestV000015Handler(t *testing.T) {
 		h := newTestHandler(t, pdnsClient)
 
 		res, err := h.HandleInitial(ctx, testDNSZone())
-		if wantErr := "create zone: pdns failure"; err == nil || !strings.Contains(err.Error(), wantErr) {
-			t.Errorf("error = %v, want substring %q", err, wantErr)
-		}
-		if res.NextState != constate.StateInitial {
-			t.Errorf("NextState = %v, want %v", res.NextState, constate.StateInitial)
-		}
+		require.ErrorContains(t, err, "create zone: pdns failure")
+		assert.Equal(t, constate.StateInitial, res.NextState)
 	})
 
 	t.Run("HandleCreated updates zone", func(t *testing.T) {
@@ -88,28 +69,16 @@ func TestV000015Handler(t *testing.T) {
 		h := newTestHandler(t, pdnsClient)
 
 		res, err := h.HandleCreated(ctx, testDNSZone())
-		if err != nil {
-			t.Fatalf("HandleCreated() error = %v", err)
-		}
-		if res.NextState != constate.StateUpdated {
-			t.Errorf("NextState = %v, want %v", res.NextState, constate.StateUpdated)
-		}
-		if len(pdnsClient.updated) != 1 {
-			t.Fatalf("updated calls = %d, want 1", len(pdnsClient.updated))
-		}
-		if got := pdnsClient.updated[0].id; got != "example.org." {
-			t.Errorf("zone ID = %q, want %q", got, "example.org.")
-		}
+		require.NoError(t, err)
+		assert.Equal(t, constate.StateUpdated, res.NextState)
+		require.Len(t, pdnsClient.updated, 1)
+		assert.Equal(t, "example.org.", pdnsClient.updated[0].id)
 		want := pdns.Zone{
 			Name:        "example.org.",
 			Kind:        "Native",
 			Nameservers: []string{"ns1.example.org.", "ns2.example.org."},
 		}
-		got := pdnsClient.updated[0].zone
-		if !slices.Equal(got.Nameservers, want.Nameservers) ||
-			got.Name != want.Name || got.Kind != want.Kind {
-			t.Errorf("updated zone = %+v, want %+v", got, want)
-		}
+		assert.Equal(t, want, pdnsClient.updated[0].zone)
 	})
 
 	t.Run("HandleUpdated updates zone", func(t *testing.T) {
@@ -117,28 +86,16 @@ func TestV000015Handler(t *testing.T) {
 		h := newTestHandler(t, pdnsClient)
 
 		res, err := h.HandleUpdated(ctx, testDNSZone())
-		if err != nil {
-			t.Fatalf("HandleUpdated() error = %v", err)
-		}
-		if res.NextState != constate.StateUpdated {
-			t.Errorf("NextState = %v, want %v", res.NextState, constate.StateUpdated)
-		}
-		if len(pdnsClient.updated) != 1 {
-			t.Fatalf("updated calls = %d, want 1", len(pdnsClient.updated))
-		}
-		if got := pdnsClient.updated[0].id; got != "example.org." {
-			t.Errorf("zone ID = %q, want %q", got, "example.org.")
-		}
+		require.NoError(t, err)
+		assert.Equal(t, constate.StateUpdated, res.NextState)
+		require.Len(t, pdnsClient.updated, 1)
+		assert.Equal(t, "example.org.", pdnsClient.updated[0].id)
 		want := pdns.Zone{
 			Name:        "example.org.",
 			Kind:        "Native",
 			Nameservers: []string{"ns1.example.org.", "ns2.example.org."},
 		}
-		got := pdnsClient.updated[0].zone
-		if !slices.Equal(got.Nameservers, want.Nameservers) ||
-			got.Name != want.Name || got.Kind != want.Kind {
-			t.Errorf("updated zone = %+v, want %+v", got, want)
-		}
+		assert.Equal(t, want, pdnsClient.updated[0].zone)
 	})
 
 	t.Run("HandleCreated missing entry", func(t *testing.T) {
@@ -146,9 +103,7 @@ func TestV000015Handler(t *testing.T) {
 		h := newTestHandler(t, pdnsClient)
 
 		_, err := h.HandleCreated(ctx, &v1.DNSZone{})
-		if wantErr := "v0_0_15 spec entry is required"; err == nil || !strings.Contains(err.Error(), wantErr) {
-			t.Errorf("error = %v, want substring %q", err, wantErr)
-		}
+		require.ErrorContains(t, err, "v0_0_15 spec entry is required")
 	})
 
 	t.Run("HandleUpdated missing entry", func(t *testing.T) {
@@ -156,9 +111,7 @@ func TestV000015Handler(t *testing.T) {
 		h := newTestHandler(t, pdnsClient)
 
 		_, err := h.HandleUpdated(ctx, &v1.DNSZone{})
-		if wantErr := "v0_0_15 spec entry is required"; err == nil || !strings.Contains(err.Error(), wantErr) {
-			t.Errorf("error = %v, want substring %q", err, wantErr)
-		}
+		require.ErrorContains(t, err, "v0_0_15 spec entry is required")
 	})
 
 	t.Run("HandleCreated update error", func(t *testing.T) {
@@ -166,9 +119,7 @@ func TestV000015Handler(t *testing.T) {
 		h := newTestHandler(t, pdnsClient)
 
 		_, err := h.HandleCreated(ctx, testDNSZone())
-		if wantErr := "update zone: pdns failure"; err == nil || !strings.Contains(err.Error(), wantErr) {
-			t.Errorf("error = %v, want substring %q", err, wantErr)
-		}
+		require.ErrorContains(t, err, "update zone: pdns failure")
 	})
 
 	t.Run("HandleUpdated update error", func(t *testing.T) {
@@ -176,9 +127,7 @@ func TestV000015Handler(t *testing.T) {
 		h := newTestHandler(t, pdnsClient)
 
 		_, err := h.HandleUpdated(ctx, testDNSZone())
-		if wantErr := "update zone: pdns failure"; err == nil || !strings.Contains(err.Error(), wantErr) {
-			t.Errorf("error = %v, want substring %q", err, wantErr)
-		}
+		require.ErrorContains(t, err, "update zone: pdns failure")
 	})
 
 	t.Run("HandleDeletionRequested deletes zone", func(t *testing.T) {
@@ -186,15 +135,9 @@ func TestV000015Handler(t *testing.T) {
 		h := newTestHandler(t, pdnsClient)
 
 		res, err := h.HandleDeletionRequested(ctx, testDNSZone())
-		if err != nil {
-			t.Fatalf("HandleDeletionRequested() error = %v", err)
-		}
-		if res.NextState != constate.StateDeleted {
-			t.Errorf("NextState = %v, want %v", res.NextState, constate.StateDeleted)
-		}
-		if got := pdnsClient.deleted; len(got) != 1 || got[0] != "example.org." {
-			t.Errorf("deleted = %v, want [example.org.]", got)
-		}
+		require.NoError(t, err)
+		assert.Equal(t, constate.StateDeleted, res.NextState)
+		assert.Equal(t, []string{"example.org."}, pdnsClient.deleted)
 	})
 
 	t.Run("HandleDeletionRequested missing entry", func(t *testing.T) {
@@ -202,15 +145,9 @@ func TestV000015Handler(t *testing.T) {
 		h := newTestHandler(t, pdnsClient)
 
 		res, err := h.HandleDeletionRequested(ctx, &v1.DNSZone{})
-		if wantErr := "v0_0_15 spec entry is required"; err == nil || !strings.Contains(err.Error(), wantErr) {
-			t.Errorf("error = %v, want substring %q", err, wantErr)
-		}
-		if res.NextState != constate.StateDeletionRequested {
-			t.Errorf("NextState = %v, want %v", res.NextState, constate.StateDeletionRequested)
-		}
-		if len(pdnsClient.deleted) != 0 {
-			t.Errorf("deleted calls = %d, want 0", len(pdnsClient.deleted))
-		}
+		require.ErrorContains(t, err, "v0_0_15 spec entry is required")
+		assert.Equal(t, constate.StateDeletionRequested, res.NextState)
+		assert.Empty(t, pdnsClient.deleted)
 	})
 
 	t.Run("HandleDeletionRequested delete error", func(t *testing.T) {
@@ -218,9 +155,7 @@ func TestV000015Handler(t *testing.T) {
 		h := newTestHandler(t, pdnsClient)
 
 		_, err := h.HandleDeletionRequested(ctx, testDNSZone())
-		if wantErr := "delete zone: pdns failure"; err == nil || !strings.Contains(err.Error(), wantErr) {
-			t.Errorf("error = %v, want substring %q", err, wantErr)
-		}
+		require.ErrorContains(t, err, "delete zone: pdns failure")
 	})
 }
 
@@ -231,18 +166,13 @@ func TestZoneFromEntry(t *testing.T) {
 		obj := testDNSZone()
 
 		got, err := h.zoneFromEntry(obj)
-		if err != nil {
-			t.Fatalf("zoneFromEntry() error = %v", err)
-		}
+		require.NoError(t, err)
 		want := pdns.Zone{
 			Name:        "example.org.",
 			Kind:        "Native",
 			Nameservers: []string{"ns1.example.org.", "ns2.example.org."},
 		}
-		if !slices.Equal(got.Nameservers, want.Nameservers) ||
-			got.Name != want.Name || got.Kind != want.Kind {
-			t.Errorf("zone = %+v, want %+v", got, want)
-		}
+		assert.Equal(t, want, got)
 	})
 
 	t.Run("absent optional nameservers", func(t *testing.T) {
@@ -250,24 +180,17 @@ func TestZoneFromEntry(t *testing.T) {
 		obj.Spec.V0_0_15.Entry.Nameservers = nil
 
 		got, err := h.zoneFromEntry(obj)
-		if err != nil {
-			t.Fatalf("zoneFromEntry() error = %v", err)
-		}
-		if got.Name != "example.org." || got.Kind != "Native" {
-			t.Errorf("zone = %+v, want name %q kind %q", got, "example.org.", "Native")
-		}
-		if len(got.Nameservers) != 0 {
-			t.Errorf("nameservers = %v, want empty", got.Nameservers)
-		}
+		require.NoError(t, err)
+		assert.Equal(t, "example.org.", got.Name)
+		assert.Equal(t, "Native", got.Kind)
+		assert.Empty(t, got.Nameservers)
 	})
 
 	t.Run("missing versioned entry", func(t *testing.T) {
 		obj := &v1.DNSZone{}
 
 		_, err := h.zoneFromEntry(obj)
-		if wantErr := "v0_0_15 spec entry is required"; err == nil || !strings.Contains(err.Error(), wantErr) {
-			t.Errorf("error = %v, want substring %q", err, wantErr)
-		}
+		require.ErrorContains(t, err, "v0_0_15 spec entry is required")
 	})
 
 	t.Run("malformed versioned entry", func(t *testing.T) {
@@ -278,9 +201,7 @@ func TestZoneFromEntry(t *testing.T) {
 		}
 
 		_, err := h.zoneFromEntry(obj)
-		if wantErr := "v0_0_15 spec entry is required"; err == nil || !strings.Contains(err.Error(), wantErr) {
-			t.Errorf("error = %v, want substring %q", err, wantErr)
-		}
+		require.ErrorContains(t, err, "v0_0_15 spec entry is required")
 	})
 
 	t.Run("translation error for mismatched GVK", func(t *testing.T) {
@@ -289,12 +210,7 @@ func TestZoneFromEntry(t *testing.T) {
 		obj.Kind = "DNSZone"
 
 		_, err := h.zoneFromEntry(obj)
-		if err == nil {
-			t.Fatal("zoneFromEntry() error = nil, want translation error")
-		}
-		if wantErr := "translate v0_0_15 entry"; !strings.Contains(err.Error(), wantErr) {
-			t.Errorf("error = %v, want substring %q", err, wantErr)
-		}
+		require.ErrorContains(t, err, "translate v0_0_15 entry")
 	})
 }
 
@@ -302,9 +218,7 @@ func TestZoneFromEntry(t *testing.T) {
 func newTestHandler(t *testing.T, pdnsClient PDNSZoneClient) *V000015Handler {
 	t.Helper()
 	h, err := NewV000015Handler(pdnsClient)
-	if err != nil {
-		t.Fatalf("NewV000015Handler() error = %v", err)
-	}
+	require.NoError(t, err)
 	return h
 }
 

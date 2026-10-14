@@ -1,7 +1,7 @@
 # pdns4kube
 
-A Kubernetes operator that manages DNS zones in [PowerDNS](https://www.powerdns.com/) Authoritative Server.
-It watches `DNSZone` resources (`pdns.example.io/v1`) and synchronizes zone create/update/delete
+A Kubernetes operator that manages DNS zones provisioned by an [PowerDNS](https://www.powerdns.com/) Authoritative Server.
+It watches `DNSZone` and `DNSRecord` resources (`pdns.example.io/v1`) and synchronizes zone create/update/delete
 with the PowerDNS Authoritative API.
 
 ## Prerequisites
@@ -21,18 +21,12 @@ with `nix develop` instead of installing them individually.
 Start everything (Kind cluster, CRDs, a dev PowerDNS, API port-forward, and the operator).
 
 With Nix, enter the dev shell:
-
 ```sh
 nix develop
 ```
+Without Nix, install Go and mage.
 
 Then, from the resulting dev shell, run:
-
-```sh
-mage run
-```
-
-Without Nix (tools installed individually):
 
 ```sh
 mage run
@@ -49,19 +43,29 @@ While `mage run` is running, create a zone:
 kubectl apply -f demo/dnszone.yaml
 ```
 
-This creates a `DNSZone` for `example.org` with two NS records (`ns1`/`ns2`). Update it
-to switch the NS records to `ns3`/`ns4`:
-
-```sh
-kubectl apply -f demo/dnszone-updated.yaml
-```
+This creates a `DNSZone` for `example.org` with two NS records (`ns1`/`ns2`).
 
 Verify the zone exists in Kubernetes and that PowerDNS serves the NS records:
 
 ```sh
-kubectl get dnszones
-dig +tcp @127.0.0.1 -p 1053 example.org NS
+kubectl get pdns
+dig +short +tcp @127.0.0.1 -p 1053 example.org NS
 ```
+
+Add DNS records:
+
+```sh
+kubectl apply -f demo/records.yaml
+```
+
+Werify the DNS record:
+
+```sh
+kubectl get pdns
+dig +short +tcp @127.0.0.1 -p 1053 www.example.org
+```
+
+Use `kubectl delete -f ...` or `kubectl delete <resource-type> <resource-name>` as usual to remove.
 
 ## Cleanup
 

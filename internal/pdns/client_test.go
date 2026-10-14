@@ -17,12 +17,14 @@ package pdns
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestCreateZone(t *testing.T) {
@@ -34,95 +36,70 @@ func TestCreateZone(t *testing.T) {
 		Kind:        "Native",
 		Nameservers: []string{"ns1.example.org."},
 	})
-	if err != nil {
-		t.Fatalf("CreateZone: %v", err)
-	}
+	require.NoError(t, err, "CreateZone")
 
-	if rec.method != http.MethodPost {
-		t.Errorf("method = %q, want POST", rec.method)
+	wantHeader := recordHeader{
+		method:      http.MethodPost,
+		path:        "/api/v1/servers/localhost/zones",
+		apiKey:      "secret",
+		contentType: "application/json",
 	}
-	if rec.path != "/api/v1/servers/localhost/zones" {
-		t.Errorf("path = %q", rec.path)
-	}
-	if rec.apiKey != "secret" {
-		t.Errorf("X-API-Key = %q, want secret", rec.apiKey)
-	}
-	if rec.contentType != "application/json" {
-		t.Errorf("Content-Type = %q", rec.contentType)
-	}
-	var got Zone
-	if err := json.Unmarshal(rec.body, &got); err != nil {
-		t.Fatalf("decode request body: %v", err)
-	}
-	if got.Name != "example.org." || got.Kind != "Native" {
-		t.Errorf("body zone = %+v", got)
-	}
+	assert.Equal(t, []recordHeader{wantHeader}, rec.headers())
+	require.Len(t, rec.records, 1)
+	got := asZone(t, rec.records[0].body)
+	want := Zone{Name: "example.org.", Kind: "Native", Nameservers: []string{"ns1.example.org."}}
+	assert.Equal(t, want, got)
 }
 
 func TestCreateZoneConflictFallsBackToUpdate(t *testing.T) {
-	var methods []string
-	var paths []string
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		methods = append(methods, r.Method)
-		paths = append(paths, r.URL.Path)
-		if r.Method == http.MethodPost {
-			w.WriteHeader(http.StatusConflict)
-			_, _ = w.Write([]byte(`{"error": "Conflict"}`))
-			return
+	srv, rec := newRecordingServer(t, func(rec *record) response {
+		if rec.method == http.MethodPost {
+			return response{status: http.StatusConflict, body: `{"error": "Conflict"}`}
 		}
-		w.WriteHeader(http.StatusNoContent)
-	}))
-	defer srv.Close()
+		return response{status: http.StatusNoContent}
+	})
 
 	c := NewClient(srv.URL, "k", srv.Client())
-	if err := c.CreateZone(context.Background(), Zone{Name: "example.org.", Kind: "Native"}); err != nil {
-		t.Fatalf("CreateZone: %v", err)
+	require.NoError(t, c.CreateZone(context.Background(),
+		Zone{Name: "example.org.", Kind: "Native"}), "CreateZone")
+
+	post := recordHeader{
+		method:      http.MethodPost,
+		path:        "/api/v1/servers/localhost/zones",
+		apiKey:      "k",
+		contentType: "application/json",
 	}
-	if len(methods) != 2 || methods[0] != http.MethodPost || methods[1] != http.MethodPut {
-		t.Errorf("methods = %v, want [POST PUT]", methods)
+	put := recordHeader{
+		method:      http.MethodPut,
+		path:        "/api/v1/servers/localhost/zones/example.org.",
+		apiKey:      "k",
+		contentType: "application/json",
 	}
-	if len(paths) != 2 || paths[1] != "/api/v1/servers/localhost/zones/example.org." {
-		t.Errorf("paths = %v", paths)
-	}
+	assert.Equal(t, []recordHeader{post, put}, rec.headers())
 }
 
 func TestUpdateZone(t *testing.T) {
 	srv, rec := capture(t, http.StatusNoContent, "")
 	c := NewClient(srv.URL, "k", srv.Client())
 
-	err := c.UpdateZone(context.Background(), "example org..Native", Zone{Name: "example.org.", Kind: "Native"})
-	if err != nil {
-		t.Fatalf("UpdateZone: %v", err)
-	}
+	err := c.UpdateZone(context.Background(), "example org..Native",
+		Zone{Name: "example.org.", Kind: "Native"})
+	require.NoError(t, err, "UpdateZone")
 
-	if rec.method != http.MethodPut {
-		t.Errorf("method = %q, want PUT", rec.method)
+	wantHeader := recordHeader{
+		method:      http.MethodPut,
+		path:        "/api/v1/servers/localhost/zones/example%20org..Native",
+		apiKey:      "k",
+		contentType: "application/json",
 	}
-	if rec.path != "/api/v1/servers/localhost/zones/example%20org..Native" {
-		t.Errorf("path = %q (zone ID not escaped)", rec.path)
-	}
-	var got Zone
-	if err := json.Unmarshal(rec.body, &got); err != nil {
-		t.Fatalf("decode request body: %v", err)
-	}
-	if got.Kind != "Native" {
-		t.Errorf("PUT body kind = %q, want Native", got.Kind)
-	}
+	assert.Equal(t, []recordHeader{wantHeader}, rec.headers())
+	require.Len(t, rec.records, 1)
+	got := asZone(t, rec.records[0].body)
+	assert.Equal(t, "Native", got.Kind)
 }
 
 func TestUpdateZoneWithNameserversSendsPutAndPatch(t *testing.T) {
-	type request struct {
-		method string
-		path   string
-		body   []byte
-	}
-	var requests []request
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		b, _ := io.ReadAll(r.Body)
-		requests = append(requests, request{method: r.Method, path: r.URL.EscapedPath(), body: b})
-		w.WriteHeader(http.StatusNoContent)
-	}))
-	defer srv.Close()
+	srv, rec := capture(t, http.StatusNoContent, "")
 
 	c := NewClient(srv.URL, "k", srv.Client())
 	err := c.UpdateZone(context.Background(), "example.org.", Zone{
@@ -130,62 +107,53 @@ func TestUpdateZoneWithNameserversSendsPutAndPatch(t *testing.T) {
 		Kind:        "Native",
 		Nameservers: []string{"ns1.example.org.", "ns2.example.org."},
 	})
-	if err != nil {
-		t.Fatalf("UpdateZone: %v", err)
-	}
+	require.NoError(t, err, "UpdateZone")
 
-	if len(requests) != 2 {
-		t.Fatalf("got %d requests, want 2: %v", len(requests), requests)
-	}
-	if requests[0].method != http.MethodPut || requests[1].method != http.MethodPatch {
-		t.Errorf("methods = [%s %s], want [PUT PATCH]", requests[0].method, requests[1].method)
-	}
 	wantPath := "/api/v1/servers/localhost/zones/example.org."
-	if requests[0].path != wantPath || requests[1].path != wantPath {
-		t.Errorf("paths = [%s %s], want both %s", requests[0].path, requests[1].path, wantPath)
+	put := recordHeader{
+		method: http.MethodPut, path: wantPath, apiKey: "k", contentType: "application/json",
 	}
+	patch := recordHeader{
+		method: http.MethodPatch, path: wantPath, apiKey: "k", contentType: "application/json",
+	}
+	assert.Equal(t, []recordHeader{put, patch}, rec.headers())
 
-	var got rrsetsPayload
-	if err := json.Unmarshal(requests[1].body, &got); err != nil {
-		t.Fatalf("decode PATCH body: %v", err)
-	}
-	if len(got.RRsets) != 1 {
-		t.Fatalf("rrsets = %+v, want 1 entry", got.RRsets)
-	}
+	require.Len(t, rec.records, 2)
+	got := asRRSets(t, rec.records[1].body)
+	require.Len(t, got.RRsets, 1)
 	rr := got.RRsets[0]
-	if rr.Name != "example.org." || rr.Type != "NS" || rr.TTL != defaultNSTTL || rr.ChangeType != "REPLACE" {
-		t.Errorf("rrset = %+v, want apex NS REPLACE with ttl %d", rr, defaultNSTTL)
+	wantRR := RRset{
+		Name:       "example.org.",
+		Type:       "NS",
+		TTL:        defaultNSTTL,
+		ChangeType: "REPLACE",
+		Records: []Record{
+			{Content: "ns1.example.org."},
+			{Content: "ns2.example.org."},
+		},
 	}
-	if len(rr.Records) != 2 || rr.Records[0].Content != "ns1.example.org." || rr.Records[1].Content != "ns2.example.org." {
-		t.Errorf("records = %+v, want ns1 and ns2", rr.Records)
-	}
+	assert.Equal(t, wantRR, rr)
 }
 
 func TestUpdateZoneEmptyNameserversSendsReplaceWithNoRecords(t *testing.T) {
-	var bodies []rrsetsPayload
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == http.MethodPatch {
-			b, _ := io.ReadAll(r.Body)
-			var p rrsetsPayload
-			if err := json.Unmarshal(b, &p); err != nil {
-				t.Errorf("decode PATCH body: %v", err)
-			}
-			bodies = append(bodies, p)
-		}
-		w.WriteHeader(http.StatusNoContent)
-	}))
-	defer srv.Close()
+	srv, rec := capture(t, http.StatusNoContent, "")
 
 	c := NewClient(srv.URL, "k", srv.Client())
-	if err := c.UpdateZone(context.Background(), "example.org.", Zone{Kind: "Native", Nameservers: []string{}}); err != nil {
-		t.Fatalf("UpdateZone: %v", err)
+	require.NoError(t, c.UpdateZone(context.Background(), "example.org.",
+	Zone{Kind: "Native", Nameservers: []string{}}), "UpdateZone")
+
+	// UpdateZone first PUTs the zone, then PATCHes the NS rrset.
+	require.Len(t, rec.records, 2)
+	got := asRRSets(t, rec.records[1].body)
+	require.Len(t, got.RRsets, 1)
+	wantRR := RRset{
+		Name:       "example.org.",
+		Type:       "NS",
+		TTL:        defaultNSTTL,
+		ChangeType: "REPLACE",
+		Records:    []Record{},
 	}
-	if len(bodies) != 1 {
-		t.Fatalf("got %d PATCH bodies, want 1", len(bodies))
-	}
-	if len(bodies[0].RRsets) != 1 || len(bodies[0].RRsets[0].Records) != 0 {
-		t.Errorf("rrsets = %+v, want REPLACE with empty records", bodies[0])
-	}
+	assert.Equal(t, wantRR, got.RRsets[0])
 }
 
 func TestReplaceRRset(t *testing.T) {
@@ -198,53 +166,33 @@ func TestReplaceRRset(t *testing.T) {
 		TTL:     300,
 		Records: []Record{{Content: "192.0.2.1"}, {Content: "192.0.2.2", Disabled: true}},
 	})
-	if err != nil {
-		t.Fatalf("ReplaceRRset: %v", err)
-	}
+	require.NoError(t, err, "ReplaceRRset")
 
-	if rec.method != http.MethodPatch {
-		t.Errorf("method = %q, want PATCH", rec.method)
+	wantHeader := recordHeader{
+		method:      http.MethodPatch,
+		path:        "/api/v1/servers/localhost/zones/example.org.",
+		apiKey:      "k",
+		contentType: "application/json",
 	}
-	if rec.path != "/api/v1/servers/localhost/zones/example.org." {
-		t.Errorf("path = %q", rec.path)
+	assert.Equal(t, []recordHeader{wantHeader}, rec.headers())
+	require.Len(t, rec.records, 1)
+	got := asRRSets(t, rec.records[0].body)
+	require.Len(t, got.RRsets, 1)
+	wantRR := RRset{
+		Name:       "www.example.org.",
+		Type:       "A",
+		TTL:        300,
+		ChangeType: "REPLACE",
+		Records: []Record{
+			{Content: "192.0.2.1"},
+			{Content: "192.0.2.2", Disabled: true},
+		},
 	}
-	if rec.apiKey != "k" {
-		t.Errorf("X-API-Key = %q, want k", rec.apiKey)
-	}
-	if rec.contentType != "application/json" {
-		t.Errorf("Content-Type = %q", rec.contentType)
-	}
-	var got rrsetsPayload
-	if err := json.Unmarshal(rec.body, &got); err != nil {
-		t.Fatalf("decode request body: %v", err)
-	}
-	if len(got.RRsets) != 1 {
-		t.Fatalf("rrsets = %+v, want 1 entry", got.RRsets)
-	}
-	rr := got.RRsets[0]
-	if rr.Name != "www.example.org." || rr.Type != "A" || rr.TTL != 300 {
-		t.Errorf("rrset = %+v", rr)
-	}
-	if rr.ChangeType != "REPLACE" {
-		t.Errorf("changetype = %q, want REPLACE", rr.ChangeType)
-	}
-	if len(rr.Records) != 2 || rr.Records[0].Content != "192.0.2.1" || !rr.Records[1].Disabled {
-		t.Errorf("records = %+v", rr.Records)
-	}
+	assert.Equal(t, wantRR, got.RRsets[0])
 }
 
 func TestReplaceRRsetOverwritesChangeType(t *testing.T) {
-	var bodies []rrsetsPayload
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		b, _ := io.ReadAll(r.Body)
-		var p rrsetsPayload
-		if err := json.Unmarshal(b, &p); err != nil {
-			t.Errorf("decode PATCH body: %v", err)
-		}
-		bodies = append(bodies, p)
-		w.WriteHeader(http.StatusNoContent)
-	}))
-	defer srv.Close()
+	srv, rec := capture(t, http.StatusNoContent, "")
 
 	c := NewClient(srv.URL, "k", srv.Client())
 	err := c.ReplaceRRset(context.Background(), "example.org.", RRset{
@@ -252,12 +200,12 @@ func TestReplaceRRsetOverwritesChangeType(t *testing.T) {
 		Type:       "A",
 		ChangeType: "DELETE",
 	})
-	if err != nil {
-		t.Fatalf("ReplaceRRset: %v", err)
-	}
-	if len(bodies) != 1 || len(bodies[0].RRsets) != 1 || bodies[0].RRsets[0].ChangeType != "REPLACE" {
-		t.Errorf("rrsets = %+v, want changetype REPLACE", bodies)
-	}
+	require.NoError(t, err, "ReplaceRRset")
+
+	require.Len(t, rec.records, 1)
+	got := asRRSets(t, rec.records[0].body)
+	require.Len(t, got.RRsets, 1)
+	assert.Equal(t, "REPLACE", got.RRsets[0].ChangeType)
 }
 
 func TestDeleteRRset(t *testing.T) {
@@ -265,39 +213,25 @@ func TestDeleteRRset(t *testing.T) {
 	c := NewClient(srv.URL, "k", srv.Client())
 
 	err := c.DeleteRRset(context.Background(), "example.org.", "www.example.org.", "A")
-	if err != nil {
-		t.Fatalf("DeleteRRset: %v", err)
-	}
+	require.NoError(t, err, "DeleteRRset")
 
-	if rec.method != http.MethodPatch {
-		t.Errorf("method = %q, want PATCH", rec.method)
+	wantHeader := recordHeader{
+		method:      http.MethodPatch,
+		path:        "/api/v1/servers/localhost/zones/example.org.",
+		apiKey:      "k",
+		contentType: "application/json",
 	}
-	if rec.path != "/api/v1/servers/localhost/zones/example.org." {
-		t.Errorf("path = %q", rec.path)
+	assert.Equal(t, []recordHeader{wantHeader}, rec.headers())
+	require.Len(t, rec.records, 1)
+	got := asRRSets(t, rec.records[0].body)
+	require.Len(t, got.RRsets, 1)
+	wantRR := RRset{
+		Name:       "www.example.org.",
+		Type:       "A",
+		ChangeType: "DELETE",
+		Records:    []Record{},
 	}
-	if rec.apiKey != "k" {
-		t.Errorf("X-API-Key = %q, want k", rec.apiKey)
-	}
-	if rec.contentType != "application/json" {
-		t.Errorf("Content-Type = %q", rec.contentType)
-	}
-	var got rrsetsPayload
-	if err := json.Unmarshal(rec.body, &got); err != nil {
-		t.Fatalf("decode request body: %v", err)
-	}
-	if len(got.RRsets) != 1 {
-		t.Fatalf("rrsets = %+v, want 1 entry", got.RRsets)
-	}
-	rr := got.RRsets[0]
-	if rr.Name != "www.example.org." || rr.Type != "A" {
-		t.Errorf("rrset = %+v", rr)
-	}
-	if rr.ChangeType != "DELETE" {
-		t.Errorf("changetype = %q, want DELETE", rr.ChangeType)
-	}
-	if len(rr.Records) != 0 {
-		t.Errorf("records = %+v, want empty for DELETE", rr.Records)
-	}
+	assert.Equal(t, wantRR, got.RRsets[0])
 }
 
 func TestDeleteZone(t *testing.T) {
@@ -305,73 +239,51 @@ func TestDeleteZone(t *testing.T) {
 	c := NewClient(srv.URL, "k", srv.Client())
 
 	err := c.DeleteZone(context.Background(), "example.org.")
-	if err != nil {
-		t.Fatalf("DeleteZone: %v", err)
+	require.NoError(t, err, "DeleteZone")
+
+	wantHeader := recordHeader{
+		method: http.MethodDelete,
+		path:   "/api/v1/servers/localhost/zones/example.org.",
+		apiKey: "k",
 	}
-	if rec.method != http.MethodDelete {
-		t.Errorf("method = %q, want DELETE", rec.method)
-	}
-	if rec.path != "/api/v1/servers/localhost/zones/example.org." {
-		t.Errorf("path = %q", rec.path)
-	}
-	if rec.contentType != "" {
-		t.Errorf("Content-Type = %q, want empty for bodyless request", rec.contentType)
-	}
+	assert.Equal(t, []recordHeader{wantHeader}, rec.headers())
 }
 
 func TestDeleteZoneNotFoundIsIdempotent(t *testing.T) {
 	srv, _ := capture(t, http.StatusNotFound, `{"error": "not found"}`)
 	c := NewClient(srv.URL, "k", srv.Client())
 
-	if err := c.DeleteZone(context.Background(), "example.org."); err != nil {
-		t.Fatalf("DeleteZone on 404: %v", err)
-	}
+	require.NoError(t, c.DeleteZone(context.Background(), "example.org."), "DeleteZone on 404")
 }
 
 func TestNon2xxErrorIncludesStatusAndBody(t *testing.T) {
-	srv, _ := capture(t, http.StatusBadRequest, `{"error": "Domain 'example.org.' is not a valid DNS name"}`)
+	srv, _ := capture(
+		t, http.StatusBadRequest, `{"error": "Domain 'example.org.' is not a valid DNS name"}`)
 	c := NewClient(srv.URL, "k", srv.Client())
 
 	err := c.CreateZone(context.Background(), Zone{Name: "example.org.", Kind: "Native"})
-	if err == nil {
-		t.Fatal("expected error for 400 response")
-	}
-	if !strings.Contains(err.Error(), "400") || !strings.Contains(err.Error(), "not a valid DNS name") {
-		t.Errorf("error = %v, want status 400 and body text", err)
-	}
+	require.Error(t, err, "expected error for 400 response")
+	assert.Contains(t, err.Error(), "400")
+	assert.Contains(t, err.Error(), "not a valid DNS name")
 }
 
 func TestErrorBodyIsCapped(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusInternalServerError)
-		_, _ = w.Write(make([]byte, 1<<20)) // 1 MiB of zeros
-	}))
-	defer srv.Close()
-
+	srv, _ := newRecordingServer(t,
+		staticResponse(http.StatusInternalServerError, strings.Repeat("\x00", 1<<20)))
 	c := NewClient(srv.URL, "k", srv.Client())
+
 	err := c.DeleteZone(context.Background(), "example.org.")
-	if err == nil {
-		t.Fatal("expected error for 500 response")
-	}
+	require.Error(t, err, "expected error for 500 response")
 	// Body is capped at 4 KiB; allow room for the error message prefix.
-	if len(err.Error()) > 4200 {
-		t.Errorf("error message too large: %d bytes", len(err.Error()))
-	}
+	assert.LessOrEqual(t, len(err.Error()), 4200)
 	var apiErr *apiError
-	if !errors.As(err, &apiErr) {
-		t.Fatalf("error %T is not *apiError", err)
-	}
-	if apiErr.StatusCode != http.StatusInternalServerError {
-		t.Errorf("StatusCode = %d, want 500", apiErr.StatusCode)
-	}
+	require.ErrorAs(t, err, &apiErr)
+	assert.Equal(t, http.StatusInternalServerError, apiErr.StatusCode)
 }
 
 func TestDoClosesBodyOnceOnError(t *testing.T) {
 	var closes int
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusForbidden)
-	}))
-	defer srv.Close()
+	srv, _ := newRecordingServer(t, staticResponse(http.StatusForbidden, ""))
 
 	c := NewClient(srv.URL, "k", srv.Client())
 	// Wrap the transport so we can count how many times the response body
@@ -381,12 +293,8 @@ func TestDoClosesBodyOnceOnError(t *testing.T) {
 	}
 
 	_, err := c.do(context.Background(), http.MethodGet, srv.URL, nil)
-	if err == nil {
-		t.Fatal("expected error for 403 response")
-	}
-	if closes != 1 {
-		t.Errorf("body closed %d times, want 1", closes)
-	}
+	require.Error(t, err, "expected error for 403 response")
+	assert.Equal(t, 1, closes)
 }
 
 type closeCountTransport struct {
@@ -412,29 +320,92 @@ func (c *countingReadCloser) Close() error {
 	return c.ReadCloser.Close()
 }
 
-// capture is a helper httptest server that records the request and replies
-// with the given status and body.
-func capture(t *testing.T, wantStatus int, wantBody string) (*httptest.Server, *record) {
+// response is the status and body a recorded request should be answered with.
+type response struct {
+	status int
+	body   string
+}
+
+// staticResponse returns a responder that always replies with the given
+// status and body.
+func staticResponse(status int, body string) func(*record) response {
+	return func(*record) response {
+		return response{status: status, body: body}
+	}
+}
+
+// recorder records every request received by its server as an ordered slice
+// of records.
+type recorder struct {
+	records []record
+}
+
+// headers returns the ordered record headers of all recorded requests.
+func (r *recorder) headers() []recordHeader {
+	headers := make([]recordHeader, len(r.records))
+	for i, rec := range r.records {
+		headers[i] = rec.recordHeader
+	}
+	return headers
+}
+
+// newRecordingServer starts an httptest server that records every request and
+// answers it with the response chosen by respond, which receives the record
+// of the request being handled. Requests are answered sequentially.
+func newRecordingServer(t *testing.T, respond func(rec *record) response) (*httptest.Server, *recorder) {
 	t.Helper()
-	rec := &record{}
+	rec := &recorder{}
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		b, _ := io.ReadAll(r.Body)
-		rec.method = r.Method
-		rec.path = r.URL.EscapedPath()
-		rec.apiKey = r.Header.Get("X-API-Key")
-		rec.contentType = r.Header.Get("Content-Type")
-		rec.body = b
-		w.WriteHeader(wantStatus)
-		_, _ = w.Write([]byte(wantBody))
+		rec.records = append(rec.records, record{
+			recordHeader: recordHeader{
+				method:      r.Method,
+				path:        r.URL.EscapedPath(),
+				apiKey:      r.Header.Get("X-API-Key"),
+				contentType: r.Header.Get("Content-Type"),
+			},
+			body: b,
+		})
+		resp := respond(&rec.records[len(rec.records)-1])
+		w.WriteHeader(resp.status)
+		_, _ = w.Write([]byte(resp.body))
 	}))
 	t.Cleanup(srv.Close)
 	return srv, rec
 }
 
-type record struct {
+// capture is a recording server that replies with a fixed status and body.
+func capture(t *testing.T, wantStatus int, wantBody string) (*httptest.Server, *recorder) {
+	t.Helper()
+	return newRecordingServer(t, staticResponse(wantStatus, wantBody))
+}
+
+func asZone(t *testing.T, body []byte) Zone {
+	t.Helper()
+
+	var z Zone
+	err := json.Unmarshal(body, &z)
+	require.NoError(t, err, "decode request body")
+	return z
+}
+
+func asRRSets(t *testing.T, body []byte) rrsetsPayload {
+	t.Helper()
+
+	var rs rrsetsPayload
+	err := json.Unmarshal(body, &rs)
+	require.NoError(t, err, "decode request body")
+	return rs
+}
+
+type recordHeader struct {
 	method      string
 	path        string
 	apiKey      string
 	contentType string
-	body        []byte
+}
+
+type record struct {
+	recordHeader
+	body []byte
 }
