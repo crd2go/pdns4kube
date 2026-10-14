@@ -17,12 +17,13 @@ package record
 import (
 	"context"
 	"errors"
-	"strings"
 	"testing"
 
 	constate "github.com/crd2go/constate"
 	"github.com/josvazg/pdns4kube/internal/pdns"
 	v1 "github.com/josvazg/pdns4kube/v1"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestV000015Handler(t *testing.T) {
@@ -33,19 +34,11 @@ func TestV000015Handler(t *testing.T) {
 		h := newTestHandler(t, pdnsClient)
 
 		res, err := h.HandleInitial(ctx, testDNSRecord())
-		if err != nil {
-			t.Fatalf("HandleInitial() error = %v", err)
-		}
-		if res.NextState != constate.StateUpdated {
-			t.Errorf("NextState = %v, want %v", res.NextState, constate.StateUpdated)
-		}
-		if len(pdnsClient.replaced) != 1 {
-			t.Fatalf("replaced calls = %d, want 1", len(pdnsClient.replaced))
-		}
+		require.NoError(t, err)
+		assert.Equal(t, constate.StateUpdated, res.NextState)
+		require.Len(t, pdnsClient.replaced, 1)
 		got := pdnsClient.replaced[0]
-		if got.zoneID != "example.org." {
-			t.Errorf("zone ID = %q, want %q", got.zoneID, "example.org.")
-		}
+		assert.Equal(t, "example.org.", got.zoneID)
 		wantRRset := pdns.RRset{
 			Name: "www.example.org.",
 			Type: "A",
@@ -55,11 +48,7 @@ func TestV000015Handler(t *testing.T) {
 				{Content: "192.0.2.2", Disabled: true},
 			},
 		}
-		if got.rrset.Name != wantRRset.Name || got.rrset.Type != wantRRset.Type ||
-			got.rrset.TTL != wantRRset.TTL ||
-			!recordsEqual(got.rrset.Records, wantRRset.Records) {
-			t.Errorf("replaced rrset = %+v, want %+v", got.rrset, wantRRset)
-		}
+		assert.Equal(t, wantRRset, got.rrset)
 	})
 
 	t.Run("HandleInitial missing entry", func(t *testing.T) {
@@ -67,15 +56,9 @@ func TestV000015Handler(t *testing.T) {
 		h := newTestHandler(t, pdnsClient)
 
 		res, err := h.HandleInitial(ctx, &v1.DNSRecord{})
-		if wantErr := "v0_0_15 spec entry is required"; err == nil || !strings.Contains(err.Error(), wantErr) {
-			t.Errorf("error = %v, want substring %q", err, wantErr)
-		}
-		if res.NextState != constate.StateInitial {
-			t.Errorf("NextState = %v, want %v", res.NextState, constate.StateInitial)
-		}
-		if len(pdnsClient.replaced) != 0 {
-			t.Errorf("replaced calls = %d, want 0", len(pdnsClient.replaced))
-		}
+		require.ErrorContains(t, err, "v0_0_15 spec entry is required")
+		assert.Equal(t, constate.StateInitial, res.NextState)
+		assert.Empty(t, pdnsClient.replaced)
 	})
 
 	t.Run("HandleInitial replace error", func(t *testing.T) {
@@ -83,12 +66,8 @@ func TestV000015Handler(t *testing.T) {
 		h := newTestHandler(t, pdnsClient)
 
 		res, err := h.HandleInitial(ctx, testDNSRecord())
-		if wantErr := "replace rrset: pdns failure"; err == nil || !strings.Contains(err.Error(), wantErr) {
-			t.Errorf("error = %v, want substring %q", err, wantErr)
-		}
-		if res.NextState != constate.StateCreated {
-			t.Errorf("NextState = %v, want %v", res.NextState, constate.StateCreated)
-		}
+		require.ErrorContains(t, err, "replace rrset: pdns failure")
+		assert.Equal(t, constate.StateCreated, res.NextState)
 	})
 
 	t.Run("HandleCreated and HandleUpdated replace rrset", func(t *testing.T) {
@@ -104,18 +83,10 @@ func TestV000015Handler(t *testing.T) {
 				h := newTestHandler(t, pdnsClient)
 
 				res, err := tc.handle(h, ctx, testDNSRecord())
-				if err != nil {
-					t.Fatalf("%s() error = %v", tc.name, err)
-				}
-				if res.NextState != constate.StateUpdated {
-					t.Errorf("NextState = %v, want %v", res.NextState, constate.StateUpdated)
-				}
-				if len(pdnsClient.replaced) != 1 {
-					t.Fatalf("replaced calls = %d, want 1", len(pdnsClient.replaced))
-				}
-				if got := pdnsClient.replaced[0].zoneID; got != "example.org." {
-					t.Errorf("zone ID = %q, want %q", got, "example.org.")
-				}
+				require.NoError(t, err)
+				assert.Equal(t, constate.StateUpdated, res.NextState)
+				require.Len(t, pdnsClient.replaced, 1)
+				assert.Equal(t, "example.org.", pdnsClient.replaced[0].zoneID)
 			})
 		}
 	})
@@ -125,16 +96,11 @@ func TestV000015Handler(t *testing.T) {
 		h := newTestHandler(t, pdnsClient)
 
 		res, err := h.HandleDeletionRequested(ctx, testDNSRecord())
-		if err != nil {
-			t.Fatalf("HandleDeletionRequested() error = %v", err)
-		}
-		if res.NextState != constate.StateDeleted {
-			t.Errorf("NextState = %v, want %v", res.NextState, constate.StateDeleted)
-		}
+		require.NoError(t, err)
+		assert.Equal(t, constate.StateDeleted, res.NextState)
 		want := deleteCall{zoneID: "example.org.", name: "www.example.org.", rtype: "A"}
-		if got := pdnsClient.deleted; len(got) != 1 || *got[0] != want {
-			t.Errorf("deleted = %v, want [%v]", got, want)
-		}
+		require.Len(t, pdnsClient.deleted, 1)
+		assert.Equal(t, want, *pdnsClient.deleted[0])
 	})
 
 	t.Run("HandleDeletionRequested missing entry", func(t *testing.T) {
@@ -142,15 +108,9 @@ func TestV000015Handler(t *testing.T) {
 		h := newTestHandler(t, pdnsClient)
 
 		res, err := h.HandleDeletionRequested(ctx, &v1.DNSRecord{})
-		if wantErr := "v0_0_15 spec entry is required"; err == nil || !strings.Contains(err.Error(), wantErr) {
-			t.Errorf("error = %v, want substring %q", err, wantErr)
-		}
-		if res.NextState != constate.StateDeletionRequested {
-			t.Errorf("NextState = %v, want %v", res.NextState, constate.StateDeletionRequested)
-		}
-		if len(pdnsClient.deleted) != 0 {
-			t.Errorf("deleted calls = %d, want 0", len(pdnsClient.deleted))
-		}
+		require.ErrorContains(t, err, "v0_0_15 spec entry is required")
+		assert.Equal(t, constate.StateDeletionRequested, res.NextState)
+		assert.Empty(t, pdnsClient.deleted)
 	})
 
 	t.Run("HandleDeletionRequested delete error", func(t *testing.T) {
@@ -158,9 +118,7 @@ func TestV000015Handler(t *testing.T) {
 		h := newTestHandler(t, pdnsClient)
 
 		_, err := h.HandleDeletionRequested(ctx, testDNSRecord())
-		if wantErr := "delete rrset: pdns failure"; err == nil || !strings.Contains(err.Error(), wantErr) {
-			t.Errorf("error = %v, want substring %q", err, wantErr)
-		}
+		require.ErrorContains(t, err, "delete rrset: pdns failure")
 	})
 }
 
@@ -172,12 +130,8 @@ func TestRRsetFromEntry(t *testing.T) {
 		obj.Spec.V0_0_15.Entry.Ttl = nil
 
 		got, err := h.rrsetFromEntry(obj)
-		if err != nil {
-			t.Fatalf("rrsetFromEntry() error = %v", err)
-		}
-		if got.rrset.TTL != defaultTTL {
-			t.Errorf("TTL = %d, want %d", got.rrset.TTL, defaultTTL)
-		}
+		require.NoError(t, err)
+		assert.Equal(t, defaultTTL, got.rrset.TTL)
 	})
 
 	t.Run("nil records", func(t *testing.T) {
@@ -185,18 +139,14 @@ func TestRRsetFromEntry(t *testing.T) {
 		obj.Spec.V0_0_15.Entry.Records = nil
 
 		_, err := h.rrsetFromEntry(obj)
-		if wantErr := "v0_0_15 spec entry records is required"; err == nil || !strings.Contains(err.Error(), wantErr) {
-			t.Errorf("error = %v, want substring %q", err, wantErr)
-		}
+		require.ErrorContains(t, err, "v0_0_15 spec entry records is required")
 	})
 
 	t.Run("missing versioned entry", func(t *testing.T) {
 		obj := &v1.DNSRecord{}
 
 		_, err := h.rrsetFromEntry(obj)
-		if wantErr := "v0_0_15 spec entry is required"; err == nil || !strings.Contains(err.Error(), wantErr) {
-			t.Errorf("error = %v, want substring %q", err, wantErr)
-		}
+		require.ErrorContains(t, err, "v0_0_15 spec entry is required")
 	})
 
 	t.Run("malformed versioned entry", func(t *testing.T) {
@@ -207,9 +157,7 @@ func TestRRsetFromEntry(t *testing.T) {
 		}
 
 		_, err := h.rrsetFromEntry(obj)
-		if wantErr := "v0_0_15 spec entry is required"; err == nil || !strings.Contains(err.Error(), wantErr) {
-			t.Errorf("error = %v, want substring %q", err, wantErr)
-		}
+		require.ErrorContains(t, err, "v0_0_15 spec entry is required")
 	})
 }
 
@@ -217,34 +165,8 @@ func TestRRsetFromEntry(t *testing.T) {
 func newTestHandler(t *testing.T, pdnsClient PDNSRecordClient) *V000015Handler {
 	t.Helper()
 	h, err := NewV000015Handler(pdnsClient)
-	if err != nil {
-		t.Fatalf("NewV000015Handler() error = %v", err)
-	}
+	require.NoError(t, err)
 	return h
-}
-
-// recordsEqual reports whether two record slices have equal contents and
-// disabled flags, order independent.
-func recordsEqual(a, b []pdns.Record) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	type record struct {
-		content  string
-		disabled bool
-	}
-	amap := make(map[record]int, len(a))
-	for _, r := range a {
-		amap[record{content: r.Content, disabled: r.Disabled}]++
-	}
-	for _, r := range b {
-		key := record{content: r.Content, disabled: r.Disabled}
-		amap[key]--
-		if amap[key] < 0 {
-			return false
-		}
-	}
-	return true
 }
 
 // fakePDNSRecordClient records PDNS calls made by the handler.
