@@ -3,10 +3,10 @@ package operator
 import (
 	"fmt"
 
-	"github.com/josvazg/pdns4kube/internal/controller/record"
-	"github.com/josvazg/pdns4kube/internal/controller/zone"
-	"github.com/josvazg/pdns4kube/internal/pdns"
-	v1 "github.com/josvazg/pdns4kube/v1"
+	"github.com/crd2go/pdns4kube/internal/controller/record"
+	"github.com/crd2go/pdns4kube/internal/controller/zone"
+	"github.com/crd2go/pdns4kube/internal/pdns"
+	v1 "github.com/crd2go/pdns4kube/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"

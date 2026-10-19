@@ -20,8 +20,8 @@ import (
 	"testing"
 
 	constate "github.com/crd2go/constate"
-	"github.com/josvazg/pdns4kube/internal/pdns"
-	v1 "github.com/josvazg/pdns4kube/v1"
+	"github.com/crd2go/pdns4kube/internal/pdns"
+	v1 "github.com/crd2go/pdns4kube/v1"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

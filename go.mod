@@ -1,4 +1,4 @@
-module github.com/josvazg/pdns4kube
+module github.com/crd2go/pdns4kube
 
 go 1.26.7
 

@@ -20,7 +20,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/josvazg/pdns4kube/internal/operator"
+	"github.com/crd2go/pdns4kube/internal/operator"
 	"k8s.io/client-go/rest"
 )
 

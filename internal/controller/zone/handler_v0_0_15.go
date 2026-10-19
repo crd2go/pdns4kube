@@ -23,9 +23,9 @@ import (
 
 	constate "github.com/crd2go/constate"
 	crapi "github.com/crd2go/crapi"
-	bases "github.com/josvazg/pdns4kube/config/crd/bases"
-	"github.com/josvazg/pdns4kube/internal/pdns"
-	v1 "github.com/josvazg/pdns4kube/v1"
+	bases "github.com/crd2go/pdns4kube/config/crd/bases"
+	"github.com/crd2go/pdns4kube/internal/pdns"
+	v1 "github.com/crd2go/pdns4kube/v1"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
