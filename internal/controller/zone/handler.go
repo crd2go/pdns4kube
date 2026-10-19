@@ -19,8 +19,8 @@ import (
 	"fmt"
 
 	constate "github.com/crd2go/constate"
-	"github.com/josvazg/pdns4kube/internal/pdns"
-	v1 "github.com/josvazg/pdns4kube/v1"
+	"github.com/crd2go/pdns4kube/internal/pdns"
+	v1 "github.com/crd2go/pdns4kube/v1"
 	crt "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
